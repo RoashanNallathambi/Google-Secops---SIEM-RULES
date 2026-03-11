@@ -1,0 +1,50 @@
+metadata.log_type = "ZSCALER_WEBPROXY"
+metadata.vendor_name = "Zscaler"
+metadata.event_type = "NETWORK_HTTP"
+network.http.method = "POST"
+security_result.action != "BLOCK"
+additional.fields["reqdatasize"] != ""
+
+// --- EXCLUSION LOGIC ---
+not target.hostname in %Legit_Domains.Domain
+not principal.application in %Legit_Domains.Application
+not network.http.referral_url in %Legit_Domains.Referrer_url
+
+// --- FALLBACK IDENTIFIER LOGIC ---
+// Device fallback: Hostname -> Source IP
+$SrcDevice_or_SrcIP = if(principal.asset.hostname != "", principal.asset.hostname, principal.ip)
+
+// Destination fallback: Domain -> Destination IP
+$DestDomain_or_DestIP = if(target.hostname != "", target.hostname, target.ip)
+
+$upload_bytes = cast.as_float(additional.fields["reqdatasize"])
+
+match:
+    $SrcDevice_or_SrcIP, $DestDomain_or_DestIP over 1h
+
+outcome:
+    $total_upload_GB = math.round(sum($upload_bytes) / 1073741824, 3)
+    $event_count = count(metadata.id)
+    
+    // Identity & Path Arrays
+    $src_ips = array_distinct(principal.ip)
+    $dest_ips = array_distinct(target.ip)
+    $users = array_distinct(principal.user.userid)
+    $target_urls = array_distinct(target.url)
+    $user_agents = array_distinct(network.http.user_agent)
+    $apps = array_distinct(principal.application)
+    $Referral_Url=array_distinct(network.http.referral_url)
+    $Port=array_distinct(target.port)
+    
+    $port_category = array_distinct(if(
+        target.port = 443 or target.port = 80,
+        "STANDARD_PORTS_443_80",
+        "NON_STANDARD_PORT"
+    ))
+
+condition:
+    // Adjusted to 500 MB (0.5 GB)
+    $total_upload_GB >= 0.5
+
+order:
+    $total_upload_GB desc
