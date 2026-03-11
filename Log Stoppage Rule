@@ -1,0 +1,37 @@
+metadata.log_type != ""
+
+$Vendor = metadata.vendor_name
+$Product_Name = metadata.product_name
+$Log_Type = metadata.log_type
+
+match:
+  $Vendor, $Product_Name, $Log_Type 
+
+outcome:
+
+  // Last log time (epoch seconds)
+  $last_log_time = max(metadata.event_timestamp.seconds)
+
+  // Hours since last log
+  $hours_since_last_log =
+    (timestamp.current_seconds() - max(metadata.event_timestamp.seconds)) / 3600
+
+  // Log health status
+  $log_status = if(
+      (timestamp.current_seconds() - max(metadata.event_timestamp.seconds)) / 3600 >= 72,
+      "LOG_SOURCE_FORWARDING_SERVER_OFFLINE",
+      if(
+          (timestamp.current_seconds() - max(metadata.event_timestamp.seconds)) / 3600 >= 15,
+          "CONFIRMED_LOG_STOPPAGE",
+          if(
+              (timestamp.current_seconds() - max(metadata.event_timestamp.seconds)) / 3600 >= 12,
+              "POSSIBLE_LOG_STOPPAGE",
+              "NORMAL"
+          )
+      )
+  )
+
+order:
+  $hours_since_last_log desc
+
+
